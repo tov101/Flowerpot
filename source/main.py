@@ -15,7 +15,7 @@ from globals import (
 from environment.environment import Environment
 from irrigation.irrigation import Irrigation
 from lamp.uvlamp import UVLamp
-from mini_os import Scheduler, Task
+from mini_os import add_task, start
 
 # Init WiFi
 
@@ -55,14 +55,14 @@ def monitor(period):
 
 
 # Set UVLamp Cycle to 12h
-Scheduler.add_task(Task(12 * 60 * 60, uvlamp.toggle))
-# Scheduler.add_task(Task(1 * 60, uvlamp.toggle))
+add_task(uvlamp.toggle, 12 * 60 * 60)
 # Set Irrigation Cycle to 24h
 # Scheduler.add_task(Task(24 * 60 * 60, irrigation.irrigate))
-Scheduler.add_task(Task(20, irrigation.irrigate))
-# Run Scheduler
-Scheduler.start()
+add_task(irrigation.irrigate, 15)
 
-# TODO: Think about how to start Scheduler loop from here
 # Launch 2nd Task
-start_new_thread(monitor, (5,))
+start_new_thread(monitor, (1,))
+
+# Run Scheduler
+start()
+

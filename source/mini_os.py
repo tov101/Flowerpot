@@ -1,100 +1,46 @@
-import time
-from machine import Timer
+import uasyncio as asyncio
 
+TASKS = []
 
-class Scheduler:
-    # States
-    STATE_IDLE = 0
-    STATE_BUSY = 1
-    # Vars
-    _clock = 0
+def set_global_exception():
+    """Allow for exception handling in event loop."""
+    def handle_exception(loop, context):
+        import sys
+        sys.print_exception(context["exception"])
+        sys.exit()
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(handle_exception)
 
-    _tasks = []
-    _nr_of_tasks = 0
-    _task_result = False
+def reschedule_every_s(t):
+    """Decorator for a callback that will keep rescheduling itself."""
+    def inner_decorator(cb):
+        async def wrapped(*args, **kwargs):
+            while True:
+                await asyncio.sleep(t)
+                cb(*args, **kwargs)
+        return wrapped
+    return inner_decorator
 
-    _period = None
-    _state = STATE_IDLE
+# Add Coros into the Event Loop
+async def main():
+    set_global_exception() # Debug aid
+    for task in TASKS:
+        asyncio.create_task(task())
+    while True: # run forever
+        await asyncio.sleep_ms(1000)
 
-    @staticmethod
-    def start(timer_period=1000):
-        timer = Timer()
-        timer.init(period=timer_period, callback=Scheduler.run)
+def add_task(task, period):
+    task = reschedule_every_s(period)(task)
+    TASKS.append(task)
 
-    @staticmethod
-    def clock():
-        return Scheduler._clock
+def start():
+    # Run the Event Loop
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Keyboard Interrupted")
+    except asyncio.TimeoutError:
+        print("Timed out")
+    finally:
+        asyncio.new_event_loop()  # Clear retained state
 
-    @staticmethod
-    def add_task(task):
-        Scheduler._tasks.append(task)
-        Scheduler._nr_of_tasks += 1
-        return True
-
-    @staticmethod
-    def remove_task(task):
-        for _t in Scheduler._tasks:
-            if _t == task:
-                Scheduler._tasks.pop(task)
-                Scheduler._nr_of_tasks -= 1
-                return True
-        return False
-
-    @staticmethod
-    def loop():
-        while True:
-            # Avoid Interrupt to overlap scheduler main loop
-            if Scheduler._state == Scheduler.STATE_BUSY:
-                return
-            # Mark Scheduler as busy
-            Scheduler._state = Scheduler.STATE_BUSY
-            # Select and Execute Task
-            for task in Scheduler._tasks:
-                # I don't need roundRobin for now
-                task.run()
-            # Free Scheduler
-            Scheduler._state = Scheduler.STATE_IDLE
-            # Sleep ?!
-            time.sleep()
-
-    @staticmethod
-    def run(_timer):
-        # Increment Clock
-        Scheduler._clock += 1
-
-
-class Task:
-    IDLE = 0
-    BUSY = 1
-    SLEEP = 2
-
-    def __init__(self, period, handler):
-        self._executed_cycles = 0
-        self._period = period
-        self._handler = handler
-        self._state = Task.IDLE
-
-        # self.sleep_time = 0
-
-    # def sleep(self, sleep_ticks):
-    #     self.sleep_time = sleep_ticks
-
-    def run(self):
-        # Do not overlap executions in case that interrupt is faster than execution of task loop
-        if self._state == Task.BUSY:
-            return
-
-        # Check if it's my time
-        _current_tick = Scheduler.clock()
-        if _current_tick < self._period:
-            return
-
-        _samples = _current_tick // self._period
-        if _samples > self._executed_cycles:
-            # Store Time
-            self._executed_cycles = _samples
-            # Call Handler
-            self._handler()
-
-        # # Sleep Until self._period time
-        # self.sleep_time = self._period - (Scheduler.clock() - _current_tick)
